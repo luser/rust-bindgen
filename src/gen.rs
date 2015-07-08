@@ -216,7 +216,12 @@ pub fn gen_mod(links: &[(String, LinkType)], globs: Vec<Global>, span: Span) -> 
             GVar(vi) => {
                 let v = vi.borrow();
                 let ty = cty_to_rs(&mut ctx, &v.ty);
-                defs.push(const_to_rs(&mut ctx, v.name.clone(), v.val.unwrap(), ty));
+                match v.ty {
+                    TInt(kind, _) => {
+                        defs.push(const_to_rs(&mut ctx, v.name.clone(), v.val.unwrap(), kind, ty));
+                    },
+                    _ => { }
+                };
             },
             _ => { }
         }
@@ -663,10 +668,31 @@ fn cunion_to_rs(ctx: &mut GenCtx, name: String, layout: Layout, members: Vec<Com
     items
 }
 
-fn const_to_rs(ctx: &mut GenCtx, name: String, val: i64, val_ty: ast::Ty) -> P<ast::Item> {
+fn int_val_as_kind(val: i64, kind: IKind) -> u64 {
+    match kind {
+        IBool => if val == 0 { 0 } else { 1 },
+        ISChar => val.abs() as i8 as u64,
+        IUChar => val as u8 as u64,
+        IShort => val.abs() as i16 as u64,
+        IUShort => val as u16 as u64,
+        IInt => val.abs() as i32 as u64,
+        IUInt => val as u32 as u64,
+        ILong => val.abs() as i32 as u64,
+        IULong => val as u32 as u64,
+        ILongLong => val.abs() as i64 as u64,
+        IULongLong => val as u64,
+    }
+}
+
+fn const_to_rs(ctx: &mut GenCtx, name: String, val: i64, kind: IKind, val_ty: ast::Ty) -> P<ast::Item> {
+    let is_signed = match kind {
+        ISChar | IShort | IInt | ILong | ILongLong => true,
+        _ => false,
+    };
+
     let int_lit = ast::LitInt(
-        val.abs() as u64,
-        ast::UnsuffixedIntLit(if val < 0 { ast::Minus } else { ast::Plus })
+        int_val_as_kind(val, kind),
+        ast::UnsuffixedIntLit(if is_signed && val < 0 { ast::Minus } else { ast::Plus })
             );
 
     let cst = ast::ItemConst(
@@ -693,7 +719,7 @@ fn cenum_to_rs(ctx: &mut GenCtx, name: String, kind: IKind, items: Vec<EnumItem>
     let mut def = ty_def;
 
     for it in items.iter() {
-        def.push(const_to_rs(ctx, it.name.clone(), it.val, val_ty.clone()));
+        def.push(const_to_rs(ctx, it.name.clone(), it.val, kind, val_ty.clone()));
     }
 
     return def;
